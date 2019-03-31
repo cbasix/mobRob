@@ -3,6 +3,7 @@ from math import pi as PI
 import time
 import pygame
 import sys
+import random
 
 # all angles are in radians !
 
@@ -93,7 +94,7 @@ class Sensor(object):
 
 
 class FieldIntensitySensor(Sensor):
-    def __init__(self, name, field_type, robot=None, offset=Vector2D(0, 0)):
+    def __init__(self, name, field_type, offset=Vector2D(0, 0)):
         super().__init__(name=name, offset=offset)
         self.field_type = field_type
 
@@ -116,9 +117,16 @@ class FieldIntensitySensor(Sensor):
 
 
 class DirectedSensor(Sensor):
-    def __init__(self, name,  angle_offset = 0):
-        super().__init__(name=name)
+    def __init__(self, name, offset, angle_offset, field_of_view_angle):
+        super().__init__(name=name, offset=offset)
         self.angle_offset = angle_offset
+        self.field_of_view_angle = field_of_view_angle
+
+        def is_in_field_of_view(source_vec):
+            source_vec.get_angle()
+
+class DistanceSensor(DirectedSensor):
+    pass
 
 
 class CircularThing(object):
@@ -156,7 +164,12 @@ class CircularRobot(CircularThing):
             self.speed = self.max_speed
 
     def change_angle(self, angle_diff):
-        self.angle = (angle_diff + self.angle) # % 2*PI
+        self.angle = (angle_diff + self.angle)
+        if self.angle > 2*PI:
+            self.angle -= 2*PI
+        elif self.angle < 0:
+            self.angle += 2*PI
+
 
     def attach_sensor(self, sensor):
         sensor.robot = self
@@ -172,23 +185,28 @@ class CircularRobot(CircularThing):
     def simulate(self, simulation):
         self.strategy.do(robot=self, sensor_data=self.get_sensor_data(simulation))
         self.position.data += Vector2D.create_by(self.speed, self.angle).data
+        # put in some unpredictability
+        if random.randint(0,50) == 0:
+            self.position.data += np.random.randint(-1, 1, (2,))
+        if random.randint(0, 50) == 0:
+            self.angle += np.deg2rad(random.randint(-1, 1))
 
 
-class HaisenbergStrategy(Strategy):
-    def __init__(self):
-        self.robot_type = 1
+class BraitenbergStrategy(Strategy):
+    def __init__(self, robot_type = 1):
+        self.robot_type = robot_type
 
     def do(self, robot, sensor_data):
-        left_engine = min(sensor_data["left"] / 1000, 1)
-        right_engine = min(sensor_data["right"] / 1000, 1)
+        left_engine = min(sensor_data["left"] / 5000, 1)
+        right_engine = min(sensor_data["right"] / 5000, 1)
         max_engine = max(left_engine, right_engine)
 
         wanted_speed = left_engine + right_engine
         if max_engine != 0:
             if self.robot_type == 1:
-                angle_change = (left_engine/max_engine)*PI*4 - (right_engine/max_engine)*PI*4
+                angle_change = (left_engine/max_engine)*PI - (right_engine/max_engine)*PI
             else:
-                angle_change = (right_engine/max_engine)*PI*4- (left_engine/max_engine)*PI*4
+                angle_change = (right_engine/max_engine)*PI - (left_engine/max_engine)*PI
         else:
             angle_change = 0
 
@@ -197,18 +215,34 @@ class HaisenbergStrategy(Strategy):
 
 
 def main():
-    strategy = HaisenbergStrategy()
 
     simulation = Simulation(np.array([360, 240]))
 
-    left_sensor = FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3))
-    right_sensor = FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3))
-    robot = CircularRobot(strategy, radius=5, position=Vector2D(60, 40))
-    robot.attach_sensor(left_sensor)
-    robot.attach_sensor(right_sensor)
 
-    simulation.things.append(robot)
-    simulation.things.append(FieldSource(5, "light", position=Vector2D(80, 80)))
+    robotA = CircularRobot(BraitenbergStrategy(robot_type=1), radius=5, position=Vector2D(60, 40))
+    robotA.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
+    robotA.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
+
+    robotB = CircularRobot(BraitenbergStrategy(robot_type=0), radius=5, position=Vector2D(100, 100))
+    robotB.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
+    robotB.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
+
+
+    simulation.things.append(robotA)
+    simulation.things.append(robotB)
+
+    simulation.things.append(FieldSource(2,
+                                         "light",
+                                         position=Vector2D(80, 80),
+                                         function=lambda x: -5*x + 1000 if -10*x + 10000 > 0 else 0))
+    simulation.things.append(FieldSource(2,
+                                         "light",
+                                         position=Vector2D(240, 230),
+                                         function=lambda x: -5 * x + 1000 if -10 * x + 1000 > 0 else 0))
+    simulation.things.append(FieldSource(2,
+                                         "light",
+                                         position=Vector2D(240, 20),
+                                         function=lambda x: -5 * x + 3000 if -10 * x + 1000 > 0 else 0))
 
     # pygame stuff
     screen = pygame.display.set_mode(simulation.size*4)
@@ -220,9 +254,9 @@ def main():
         while True:
             simulation.step()
 
-            print("Speed: ", robot.speed)
-            print("Angle: ", np.rad2deg(robot.angle))
-            print("Position:", robot.position.data)
+            #print("Speed: ", robot.speed)
+            #print("Angle: ", np.rad2deg(robot.angle))
+            #print("Position:", robot.position.data)
 
             screen.fill(black)
 
@@ -236,16 +270,16 @@ def main():
                         (thing.position.data + Vector2D(thing.radius, 0).get_rotated(thing.angle)).astype(int)*4
                     )
 
-                    for sensor in robot.sensors:
+                    for sensor in thing.sensors:
                         pygame.draw.circle(screen, green, sensor.get_position().astype(int)*4, 2, 1)
 
 
                 elif thing.type == "field_source":
-                    pygame.draw.circle(screen, green, (thing.position.data).astype(int)*4, thing.radius*4, 6)
+                    pygame.draw.circle(screen, green, thing.position.data.astype(int)*4, thing.radius*4, 6)
 
             pygame.display.flip()
 
-            time.sleep(0.1)
+            time.sleep(0.07)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT: sys.exit()
