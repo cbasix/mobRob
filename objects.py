@@ -161,18 +161,13 @@ class DistanceSensor(DirectedSensor):
         super().__init__(name=name, offset=offset, angle_offset=angle_offset, field_of_view_angle=field_of_view_angle)
 
     def measure(self, world):
-        value = None
+        value = 9999999
         for thing in world.things:
-            try:
-                if thing.type == "robot":
-                    continue
-                radius = thing.radius
-            except AttributeError:
-                # has no field type, is of no interest to us
+            if thing == self.robot:
                 continue
 
             if self.is_in_field_of_view(thing):
-                distance = thing.position.get_euclidean_distance(self.get_position()) - radius
+                distance = thing.position.get_euclidean_distance(self.get_position()) - thing.radius
                 if value is None or distance < value:
                     value = distance
 
@@ -180,13 +175,20 @@ class DistanceSensor(DirectedSensor):
 
 
 class CircularThing(object):
-    def __init__(self, position=Vector2D(0, 0), radius=0, image=None):
+    def __init__(self, position=Vector2D(0, 0), radius=0):
         self.position = position
         self.radius = radius
-        self.image = image
 
     def simulate(self, simulation):
         pass
+
+
+class Obstacle(CircularThing):
+    def __init__(self, position=Vector2D(0, 0), radius=0):
+        super().__init__(position=position, radius=radius)
+        self.type = "obstacle"
+
+
 
 
 class FieldSource(CircularThing):
@@ -198,13 +200,14 @@ class FieldSource(CircularThing):
 
 
 class CircularRobot(CircularThing):
-    def __init__(self, strategy, position=Vector2D(0,0), angle=0, radius=5):
+    def __init__(self, strategy, position=Vector2D(0,0), angle=0, radius=5, name="unknown"):
         super().__init__(position=position, radius = radius)
         self.angle = angle
         self.sensors = []
         self.strategy = strategy
         self.speed = 0
         self.max_speed = 3
+        self.name = name
         self.type = "robot"
 
     def set_speed(self, speed):
@@ -238,6 +241,8 @@ class CircularRobot(CircularThing):
         if random.randint(0, 50) == 0:
             self.angle += np.deg2rad(random.randint(-1, 1))
 
+    def __str__(self):
+        return self.name
 
 class BraitenbergStrategy(Strategy):
     def __init__(self, robot_type = 1):
@@ -263,22 +268,58 @@ class BraitenbergStrategy(Strategy):
         robot.set_speed(wanted_speed)
 
 
+class AvoidanceStrategy(Strategy):
+    def __init__(self):
+        self.sub_strategy = BraitenbergStrategy(1)
+
+    def do(self, robot, sensor_data):
+        robot.set_speed(robot.max_speed/2)
+
+        #self.sub_strategy.do(robot, sensor_data)
+        angle_change = 0 if sensor_data["dist_front"] > 10 else PI/4
+
+        robot.change_angle(angle_change)
+
+class AvoidanceTwoStrategy(Strategy):
+    def do(self, robot, sensor_data):
+        robot.set_speed(robot.max_speed/2)
+
+        #self.sub_strategy.do(robot, sensor_data)
+        angle_change = -PI/16 if sensor_data["dist_left"] > sensor_data["dist_right"] else PI/16
+
+        robot.change_angle(angle_change)
+
+
 def main():
 
     simulation = Simulation(np.array([360, 240]))
 
 
-    #robotA = CircularRobot(BraitenbergStrategy(robot_type=0), radius=5, position=Vector2D(60, 40))
-    #robotA.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
-    #robotA.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
+    robotA = CircularRobot(BraitenbergStrategy(robot_type=0), radius=5, position=Vector2D(120, 140), name="A")
+    robotA.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
+    robotA.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
 
-    robotB = CircularRobot(BraitenbergStrategy(robot_type=1), radius=5, position=Vector2D(100, 100))
+    robotB = CircularRobot(BraitenbergStrategy(robot_type=1), radius=5, position=Vector2D(240, 100), name="B")
     robotB.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
     robotB.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
     robotB.attach_sensor(DistanceSensor("dist_front",  offset=Vector2D(3, 0), angle_offset=0, field_of_view_angle=np.deg2rad(25)))
 
-    #simulation.things.append(robotA)
+    robotC = CircularRobot(AvoidanceStrategy(), radius=5, position=Vector2D(200, 100), name="C")
+    robotC.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
+    robotC.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
+    robotC.attach_sensor(
+        DistanceSensor("dist_front", offset=Vector2D(3, 0), angle_offset=0, field_of_view_angle=np.deg2rad(15)))
+
+    robotD = CircularRobot(AvoidanceTwoStrategy(), radius=5, position=Vector2D(200, 100), name="D")
+    robotD.attach_sensor(
+        DistanceSensor("dist_left", offset=Vector2D(3, -3), angle_offset=-15, field_of_view_angle=np.deg2rad(15)))
+    robotD.attach_sensor(
+        DistanceSensor("dist_right", offset=Vector2D(3, 3), angle_offset=15, field_of_view_angle=np.deg2rad(15)))
+
+    simulation.things.append(robotA)
     simulation.things.append(robotB)
+    simulation.things.append(robotC)
+    simulation.things.append(robotD)
 
     simulation.things.append(FieldSource(5,
                                          "light",
@@ -293,13 +334,34 @@ def main():
                                          position=Vector2D(240, 20),
                                          function=lambda x: -5 * x + 3000 if -10 * x + 1000 > 0 else 0))
 
+    # walls, yes circular walls...
+    wall_radius = 10
+    for x in range(0, simulation.size[0]+wall_radius, wall_radius):
+        for y in (0, simulation.size[1]):
+            simulation.things.append(
+                Obstacle(radius=wall_radius, position=Vector2D(x, y)))  # top and bottom wall
+
+    for y in range(0, simulation.size[1] + wall_radius, wall_radius):
+        for x in (0, simulation.size[0]):
+            simulation.things.append(
+                Obstacle(radius=wall_radius, position=Vector2D(x, y))) # left and right wall
+
+
+    for y in range(random.randint(0, simulation.size[1]), wall_radius):
+        for x in range(0, 5*wall_radius, wall_radius):
+            simulation.things.append(
+                Obstacle(radius=wall_radius, position=Vector2D(x, y)))
+
+
     # pygame stuff
-    zoom = 2
+    zoom = 4
     screen = pygame.display.set_mode(simulation.size*zoom)
 
     black = 0, 0, 0
     red = 255, 0, 0
     green = 0, 155, 0
+    grey = 150, 150, 150
+    white = 255, 255, 255
 
 
     try:
@@ -313,7 +375,12 @@ def main():
             screen.fill(black)
 
             for thing in simulation.things:
-                if thing.type == "robot":
+                try:
+                    type = thing.type
+                except AttributeError:
+                    continue
+
+                if type == "robot":
                     pygame.draw.circle(screen, red, thing.position.data.astype(int)*zoom, thing.radius*zoom, 2*zoom)
                     pygame.draw.line(
                         screen,
@@ -323,15 +390,17 @@ def main():
                     )
 
                     for sensor in thing.sensors:
-                        pygame.draw.circle(screen, green, sensor.get_position().astype(int)*zoom, 1*zoom, 1)
+                        pygame.draw.circle(screen, white, sensor.get_position().astype(int)*zoom, 1*zoom, 1)
 
-
-                elif thing.type == "field_source":
+                elif type == "field_source":
                     pygame.draw.circle(screen, green, thing.position.data.astype(int)*zoom, thing.radius*zoom, 2*zoom)
+
+                elif type == "obstacle":
+                    pygame.draw.circle(screen, grey, thing.position.data.astype(int) * zoom, thing.radius * zoom, 2 * zoom)
 
             pygame.display.flip()
 
-            time.sleep(0.5)
+            time.sleep(0.01)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT: sys.exit()
