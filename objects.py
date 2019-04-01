@@ -7,6 +7,13 @@ import random
 
 # all angles are in radians !
 
+def normalize_angle(angle):
+    while angle > PI:
+        angle -= 2 * PI
+    while angle < -PI:
+        angle += 2 * PI
+    return angle
+
 class Vector2D(object):
     # get vector by length and angle
     @staticmethod
@@ -17,7 +24,7 @@ class Vector2D(object):
         return vector
 
     def __init__(self, x, y, data=None):
-        if data:
+        if data is not None:
             self.data = data
         else:
             self.data = np.array([x, y], dtype='float64')
@@ -40,15 +47,26 @@ class Vector2D(object):
         """ Returns the unit vector of the vector.  """
         return self.data / np.linalg.norm(self.data)
 
-
     def angle_between(self, v2):
-        v1_u = self.unit_vector()
-        v2_u = v2.unit_vector()
-        if v2_u is not None or  v1_u is not None:
-            return 0
-        if np.isnan(v1_u).any() or np.isnan(v2_u).any():
-            return 0  # return an angle of zero if at least one zerovector
-        return np.rad2deg(np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0)))
+        """
+        compute angle (in degrees) for p0p1p2 corner
+        Inputs:
+            p0,p1,p2 - points in the form of [x,y]
+        """
+
+        v0 = v2.data
+        v1 = self.data
+
+        angle = np.math.atan2(np.linalg.det([v0, v1]), np.dot(v0, v1))
+        return angle
+
+        # v1_u = self.unit_vector()
+        # v2_u = v2.unit_vector()
+        # if v2_u is None or v1_u is None:
+        #    return 0
+        # if np.isnan(v1_u).any() or np.isnan(v2_u).any():
+        #    return 0  # return an angle of zero if at least one zerovector
+        # return normalize_angle(np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0)))
 
     # get vector angle in radians
     def get_angle(self):
@@ -122,11 +140,43 @@ class DirectedSensor(Sensor):
         self.angle_offset = angle_offset
         self.field_of_view_angle = field_of_view_angle
 
-        def is_in_field_of_view(source_vec):
-            source_vec.get_angle()
+    def is_in_field_of_view(self, thing):
+        angle_added_by_radius = np.tan((thing.radius/2) / thing.position.get_euclidean_distance(self.get_position()))
+
+        view_direction = normalize_angle(self.angle_offset + self.robot.angle)
+        vec_to_thing = Vector2D(x=None, y=None, data=thing.position.data - self.get_position())
+        angle_between = normalize_angle(view_direction - vec_to_thing.get_angle())
+        angle_between = min(angle_between, 2*PI - angle_between)
+
+        # todo handle negative angle betweens (over zero distance
+        return abs(angle_between) <= self.field_of_view_angle + angle_added_by_radius
+
+    def measure(self, simulation):
+        pass
+
+
 
 class DistanceSensor(DirectedSensor):
-    pass
+    def __init__(self, name, offset, angle_offset, field_of_view_angle):
+        super().__init__(name=name, offset=offset, angle_offset=angle_offset, field_of_view_angle=field_of_view_angle)
+
+    def measure(self, world):
+        value = None
+        for thing in world.things:
+            try:
+                if thing.type == "robot":
+                    continue
+                radius = thing.radius
+            except AttributeError:
+                # has no field type, is of no interest to us
+                continue
+
+            if self.is_in_field_of_view(thing):
+                distance = thing.position.get_euclidean_distance(self.get_position()) - radius
+                if value is None or distance < value:
+                    value = distance
+
+        return value
 
 
 class CircularThing(object):
@@ -164,11 +214,8 @@ class CircularRobot(CircularThing):
             self.speed = self.max_speed
 
     def change_angle(self, angle_diff):
-        self.angle = (angle_diff + self.angle)
-        if self.angle > 2*PI:
-            self.angle -= 2*PI
-        elif self.angle < 0:
-            self.angle += 2*PI
+        self.angle = normalize_angle(angle_diff + self.angle)
+
 
 
     def attach_sensor(self, sensor):
@@ -197,6 +244,8 @@ class BraitenbergStrategy(Strategy):
         self.robot_type = robot_type
 
     def do(self, robot, sensor_data):
+        print(robot, sensor_data)
+
         left_engine = min(sensor_data["left"] / 5000, 1)
         right_engine = min(sensor_data["right"] / 5000, 1)
         max_engine = max(left_engine, right_engine)
@@ -219,19 +268,19 @@ def main():
     simulation = Simulation(np.array([360, 240]))
 
 
-    robotA = CircularRobot(BraitenbergStrategy(robot_type=1), radius=5, position=Vector2D(60, 40))
-    robotA.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
-    robotA.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
+    #robotA = CircularRobot(BraitenbergStrategy(robot_type=0), radius=5, position=Vector2D(60, 40))
+    #robotA.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
+    #robotA.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
 
-    robotB = CircularRobot(BraitenbergStrategy(robot_type=0), radius=5, position=Vector2D(100, 100))
+    robotB = CircularRobot(BraitenbergStrategy(robot_type=1), radius=5, position=Vector2D(100, 100))
     robotB.attach_sensor(FieldIntensitySensor("left", field_type="light", offset=Vector2D(3, 3)))
     robotB.attach_sensor(FieldIntensitySensor("right", field_type="light", offset=Vector2D(3, -3)))
+    robotB.attach_sensor(DistanceSensor("dist_front",  offset=Vector2D(3, 0), angle_offset=0, field_of_view_angle=np.deg2rad(25)))
 
-
-    simulation.things.append(robotA)
+    #simulation.things.append(robotA)
     simulation.things.append(robotB)
 
-    simulation.things.append(FieldSource(2,
+    simulation.things.append(FieldSource(5,
                                          "light",
                                          position=Vector2D(80, 80),
                                          function=lambda x: -5*x + 1000 if -10*x + 10000 > 0 else 0))
@@ -245,11 +294,14 @@ def main():
                                          function=lambda x: -5 * x + 3000 if -10 * x + 1000 > 0 else 0))
 
     # pygame stuff
-    screen = pygame.display.set_mode(simulation.size*4)
+    zoom = 2
+    screen = pygame.display.set_mode(simulation.size*zoom)
 
     black = 0, 0, 0
     red = 255, 0, 0
     green = 0, 155, 0
+
+
     try:
         while True:
             simulation.step()
@@ -262,24 +314,24 @@ def main():
 
             for thing in simulation.things:
                 if thing.type == "robot":
-                    pygame.draw.circle(screen, red, thing.position.data.astype(int)*4, thing.radius*4, 6)
+                    pygame.draw.circle(screen, red, thing.position.data.astype(int)*zoom, thing.radius*zoom, 2*zoom)
                     pygame.draw.line(
                         screen,
                         green,
-                        thing.position.data.astype(int)*4,
-                        (thing.position.data + Vector2D(thing.radius, 0).get_rotated(thing.angle)).astype(int)*4
+                        thing.position.data.astype(int)*zoom,
+                        (thing.position.data + Vector2D(thing.radius, 0).get_rotated(thing.angle)).astype(int)*zoom
                     )
 
                     for sensor in thing.sensors:
-                        pygame.draw.circle(screen, green, sensor.get_position().astype(int)*4, 2, 1)
+                        pygame.draw.circle(screen, green, sensor.get_position().astype(int)*zoom, 1*zoom, 1)
 
 
                 elif thing.type == "field_source":
-                    pygame.draw.circle(screen, green, thing.position.data.astype(int)*4, thing.radius*4, 6)
+                    pygame.draw.circle(screen, green, thing.position.data.astype(int)*zoom, thing.radius*zoom, 2*zoom)
 
             pygame.display.flip()
 
-            time.sleep(0.07)
+            time.sleep(0.5)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT: sys.exit()
@@ -291,3 +343,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
