@@ -43,10 +43,10 @@ class CircularRobot(CircularThing):
         self.strategy.do(robot=self, sensor_data=self.get_sensor_data(simulation))
         self.position.data += Vector2D.create_by(self.speed, self.angle).data
         # put in some unpredictability
-        if random.randint(0,50) == 0:
-            self.position.data += np.random.randint(-1, 1, (2,))
-        if random.randint(0, 50) == 0:
-            self.angle += np.deg2rad(random.randint(-1, 1))
+        #if random.randint(0,50) == 0:
+        #    self.position.data += np.random.randint(-1, 1, (2,))
+        #if random.randint(0, 50) == 0:
+        #    self.angle += np.deg2rad(random.randint(-1, 1))
 
     def __str__(self):
         return self.name

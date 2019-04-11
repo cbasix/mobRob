@@ -28,3 +28,17 @@ class CircularThing(object):
 
     def simulate(self, simulation):
         pass
+
+
+class Sensor(object):
+    def __init__(self, name, offset):
+        self.name = name
+        self.robot = None
+        self.offset = offset
+
+    def get_position(self):
+        # rotate sensor around robot center before adding it's pos
+        return self.robot.position.data + self.offset.get_rotated(self.robot.angle)
+
+    def measure(self, world):
+        pass

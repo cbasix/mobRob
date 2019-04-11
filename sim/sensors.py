@@ -2,21 +2,8 @@ from math import pi as PI
 
 import numpy as np
 
+from sim.base import Sensor
 from sim.vector import normalize_angle, Vector2D
-
-
-class Sensor(object):
-    def __init__(self, name, offset):
-        self.name = name
-        self.robot = None
-        self.offset = offset
-
-    def get_position(self):
-        # rotate sensor around robot center before adding it's pos
-        return self.robot.position.data + self.offset.get_rotated(self.robot.angle)
-
-    def measure(self, world):
-        pass
 
 
 class FieldIntensitySensor(Sensor):
