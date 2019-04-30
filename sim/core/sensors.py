@@ -2,8 +2,8 @@ from math import pi as PI
 
 import numpy as np
 
-from sim.base import Sensor
-from sim.vector import normalize_angle, Vector2D
+from sim.core.base import Sensor
+from sim.core.vector import normalize_angle, Vector2D
 
 
 class FieldIntensitySensor(Sensor):

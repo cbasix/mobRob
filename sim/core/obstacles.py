@@ -1,7 +1,7 @@
 import numpy as np
 
-from sim.base import CircularThing
-from sim.vector import Vector2D
+from sim.core.base import CircularThing
+from sim.core.vector import Vector2D
 
 
 class Obstacle(CircularThing):

@@ -1,6 +1,10 @@
+import os
+from tkinter import filedialog
+
+import dill
 import numpy as np
 
-from sim.vector import Vector2D
+from sim.core.vector import Vector2D
 
 class Simulation(object):
     def __init__(self, size=np.array([800, 600])):
@@ -14,6 +18,32 @@ class Simulation(object):
             # prevent driving out of world
             thing.position.data[0] = np.clip(thing.position.data[0], 0, self.size[0])
             thing.position.data[1] = np.clip(thing.position.data[1], 0, self.size[1])
+
+    def save(self, destination=None):
+        from sim.core.obstacles import Obstacle
+
+        # save only obstacles (else the robot and all its code, strategies etc. would be saved too, which we dont want)
+        self.things = [i for i in self.things if isinstance(i, Obstacle)]
+
+        if destination is None:
+            destination = filedialog.asksaveasfilename()
+
+        if destination:
+            with open(destination, 'wb') as output_file:
+                dill.dump(self, output_file)
+
+    @staticmethod
+    def loadFrom(world=None):
+        if world:
+            input_file_path = os.path.join("worlds", world)
+        else:
+            input_file_path = filedialog.askopenfilename()
+
+        if input_file_path:
+            with open(input_file_path, 'rb') as input_file:
+                return dill.load(input_file)
+
+        raise ValueError("No valid world file selected")
 
 
 class Strategy(object):

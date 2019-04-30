@@ -2,8 +2,8 @@ import random
 
 import numpy as np
 
-from sim.base import CircularThing
-from sim.vector import Vector2D, normalize_angle
+from sim.core.base import CircularThing
+from sim.core.vector import Vector2D, normalize_angle
 
 
 class CircularRobot(CircularThing):
