@@ -61,6 +61,10 @@ def loop(simulation):
                 elif type == "obstacle":
                     pygame.draw.circle(screen, grey, thing.position.data.astype(int) * zoom, thing.radius * zoom, 2 * zoom)
 
+                elif type == "marker":
+                    pygame.draw.circle(screen, green, thing.position.data.astype(int) * zoom, thing.radius * zoom,
+                                       2 * zoom)
+
             pygame.display.flip()
 
             time.sleep(0.01)

@@ -8,7 +8,7 @@ from sim.core.vector import Vector2D, normalize_angle
 
 class CircularRobot(CircularThing):
     def __init__(self, strategy, position=Vector2D(0, 0), angle=0, radius=5, name="unknown"):
-        super().__init__(position=position, radius = radius)
+        super().__init__(position=position, radius=radius)
         self.angle = angle
         self.sensors = []
         self.strategy = strategy

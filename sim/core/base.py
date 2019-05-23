@@ -72,3 +72,11 @@ class Sensor(object):
 
     def measure(self, world):
         pass
+
+
+class Marker(CircularThing):
+    def __init__(self, position=Vector2D(0, 0), radius=0):
+        super().__init__(position, radius)
+        self.type = "marker"
+
+

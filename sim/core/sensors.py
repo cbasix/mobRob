@@ -66,4 +66,11 @@ class DistanceSensor(DirectedSensor):
 
         return value
 
+class MapSensor(Sensor):
+    def __init__(self, name):
+        super().__init__(name=name, offset=0)
+
+    def measure(self, world):
+        return world
+
 
